@@ -1,7 +1,7 @@
 package TextWise::Categorizer;
 
 use 5.010;
-use Moose;
+use Mouse;
 
 # attributes
 has 'API_TOKEN' => (is => 'ro', isa => 'Str');
