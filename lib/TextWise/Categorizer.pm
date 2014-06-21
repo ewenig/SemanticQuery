@@ -1,7 +1,7 @@
 package TextWise::Categorizer;
 
 use 5.010;
-use Moose;
+use Mouse;
 
 # attributes
 has 'API_TOKEN' => (is => 'ro', isa => 'Str');
@@ -10,7 +10,9 @@ has 'API_OPTS'  => (is => 'rw', isa => 'HashRef', required => 0);
 use Carp;
 use URL::Encode qw(url_encode);
 use WWW::Curl::Easy;
+use TextWise;
 use JSON;
+use Data::Dumper qw(Dumper);
 
 sub categorize {
 	my $self = shift;
@@ -41,8 +43,6 @@ sub categorize {
 	# perform request
 	$curl->perform;
 
-	#printf("%s\n",$resp);
-
 	# error checking
 	my $respobj = decode_json($resp);
 	if ($respobj->{'message'} && $respobj->{'message'}->{'messageCode'} == 102) {
@@ -50,6 +50,12 @@ sub categorize {
 	}
 
 	my $categories = $respobj->{'categorizer'}->{'categorizerResponse'}->{'categories'};
+
+	for my $item (@$categories) {
+		my $long_name = $TextWise::Categories->{$item->{'id'}};
+		$item->{'id'} = $long_name;
+	}
+
 	return $categories;
 }
 
