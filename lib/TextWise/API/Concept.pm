@@ -67,7 +67,7 @@ sub _makeopts {
 
 =head1 NAME
 
-TextWise::Categorizer - Perl interface for the TextWise (http://www.textwise.com/) Categorizer API
+TextWise::API::Concept - Perl interface for the TextWise (http://www.textwise.com/) Concept API
 
 =head1 VERSION
 
@@ -80,30 +80,21 @@ our $VERSION = '0.01';
 
 =head1 SYNOPSIS
 
-TextWise::Categorizer provides native access to the TextWise Categorizer API.
+TextWise::API::Concept provides native access to the TextWise Concept API.
 
 It is invoked thusly:
 
-    use TextWise::Categorizer;
+    use TextWise::API::Concept;;
 
-    my $cat = TextWise::Categorizer->new(
+    my $con = TextWise::API::Concept->new(
         API_TOKEN = 'tokenstring',  # required
-	API_OPTS = { API options }, # not required (see http://www.textwise.com/api/documentation/api-services/category-service for parameters)
 	);
 
-    $resp = $cat->categorize('http://www.example.com'); # response in Array[HashRef] format
-    ...
+    $resp = $con->process('http://www.example.com'); # response in Array[HashRef] format
 
 =head1 AUTHOR
 
 Eli Wenig, C<< <eli at csh.rit.edu> >>
-
-=head1 BUGS
-
-Please report any bugs or feature requests to C<bug-textwise-categorizer at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=TextWise-Categorizer>.  I will be notified, and then you'll
-automatically be notified of progress on your bug as I make changes.
-
 
 
 
@@ -111,7 +102,7 @@ automatically be notified of progress on your bug as I make changes.
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc TextWise::Categorizer
+    perldoc TextWise::API::Concept
 
 
 You can also look for information at:
@@ -120,19 +111,19 @@ You can also look for information at:
 
 =item * RT: CPAN's request tracker (report bugs here)
 
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=TextWise-Categorizer>
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=TextWise-API-Concept>
 
 =item * AnnoCPAN: Annotated CPAN documentation
 
-L<http://annocpan.org/dist/TextWise-Categorizer>
+L<http://annocpan.org/dist/TextWise-API-Concept>
 
 =item * CPAN Ratings
 
-L<http://cpanratings.perl.org/d/TextWise-Categorizer>
+L<http://cpanratings.perl.org/d/TextWise-API-Concept>
 
 =item * Search CPAN
 
-L<http://search.cpan.org/dist/TextWise-Categorizer/>
+L<http://search.cpan.org/dist/TextWise-API-Concept/>
 
 =back
 
@@ -183,5 +174,5 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 =cut
 
-1; # End of TextWise::Categorizer
+1; # End of TextWise::API::Concept
 
