@@ -1,4 +1,4 @@
-package TextWise::Categorizer;
+package TextWise::API::Category;
 
 use 5.010;
 use Mouse;
@@ -12,11 +12,10 @@ use URL::Encode qw(url_encode);
 use WWW::Curl::Easy;
 use TextWise;
 use JSON;
-use Data::Dumper qw(Dumper);
 
-sub categorize {
+sub process {
 	my $self = shift;
-	my $TARGET_URL = shift or croak("Categorizer requires a URL argument");
+	my $TARGET_URL = shift or croak(__PACKAGE__ . " requires a URL argument");
 	my $TW_API_BASE = "http://api.semantichacker.com/" . $self->API_TOKEN . "/category?";
 	my $curl = WWW::Curl::Easy->new;
 
