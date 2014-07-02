@@ -10,6 +10,7 @@ has 'API_TOKEN'  => (is => 'ro', isa => 'Str');
 has 'TARGET_URL' => (is => 'ro', isa => 'Str', required => 0);
 
 sub process {
+	# lazy package loading
 	require TextWise::API::Category;
 	require TextWise::API::Concept;
 

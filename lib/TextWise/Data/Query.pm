@@ -11,6 +11,7 @@ use strict;
 use warnings;
 
 sub process {
+	# lazy package loading
 	require TextWise::API::Category;
 	require TextWise::API::Concept;
 
