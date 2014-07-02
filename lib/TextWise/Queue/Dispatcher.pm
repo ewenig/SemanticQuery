@@ -13,6 +13,7 @@ has 'ZMQ_ENDPOINT' => (is => 'ro', isa => 'Str');
 
 use strict;
 use warnings;
+use Carp qw(croak);
 use Storable qw(freeze);
 use Log::Contextual::SimpleLogger;
 use Log::Contextual qw( :log ),
@@ -27,7 +28,7 @@ use ZMQ::Constants qw(ZMQ_PUB ZMQ_SNDMORE);
 use TextWise::Data::URL;
 use TextWise::Data::Query;
 
-my ($context, $publisher, $buf, $socket);
+my ($context, $publisher, $socket);
 my $s_interrupted = 0;
 $SIG{'INT'} = \&_handler;
 
@@ -61,6 +62,7 @@ sub loop {
 
 sub _dispatch {
 	my $remote = shift;
+	croak('Undefined socket') unless (defined($remote));
 	my $task = "";
 
 	while (<$remote>) {
@@ -69,9 +71,10 @@ sub _dispatch {
 
 	# XXX IMPLEMENT PROTOCOL BUFFERS
 	# Task differentiation
-	if ($task ~= m/^Query/) {
+	my $obj;
+	if ($task =~ m/^Query/) {
 		croak('Not implemented');
-	} else if ($task ~= m/^URL(.*)$/) {
+	} elsif ($task =~ m/^URL(.*)$/) {
 		$obj = TextWise::Data::URL->new(TARGET_URL => $1);
 	} else {
 		croak('Task not recognized');
