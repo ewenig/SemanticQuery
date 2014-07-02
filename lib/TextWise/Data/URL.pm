@@ -2,17 +2,23 @@ package TextWise::Data::URL;
 
 use strict;
 use warnings;
+use Carp;
 use Mouse;
 
 # attributes
 has 'API_TOKEN'  => (is => 'ro', isa => 'Str');
-has 'TARGET_URL' => (is => 'ro', isa => 'Str');
-
-use TextWise::API::Category;
-use TextWise::API::Concept;
+has 'TARGET_URL' => (is => 'ro', isa => 'Str', required => 0);
 
 sub process {
+	require TextWise::API::Category;
+	require TextWise::API::Concept;
+
 	my $self = shift;
+	unless (defined($self->API_TOKEN)) {
+		carp(__PACKAGE__ . ' requires API token');
+		return;
+	}
+
 	my $categorizer = TextWise::API::Category->new(API_TOKEN => $self->API_TOKEN);
 	my $conceiver = TextWise::API::Concept->new(API_TOKEN => $self->API_TOKEN);
 
