@@ -4,11 +4,12 @@ use 5.010;
 use Mouse;
 
 # attributes
-has 'TEXT'      => (is => 'ro', isa => 'Str');
+has 'TEXT'      => (is => 'ro', isa => 'Str', required => 1);
 has 'API_TOKEN' => (is => 'ro', isa => 'Str', required => 0);
 
 use strict;
 use warnings;
+use TextWise::Logger;
 
 sub process {
 	# lazy package loading
@@ -29,6 +30,7 @@ sub process {
 
 	my $ret = { categories => $categories, concepts => $concepts };
 	# XXX mongo map reduce
+	log_debug { "TODO: Map-reduce, return query results" };
 
 	return $ret;
 }

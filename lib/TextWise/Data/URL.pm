@@ -1,13 +1,15 @@
 package TextWise::Data::URL;
 
-use strict;
-use warnings;
 use Carp;
 use Mouse;
 
 # attributes
-has 'API_TOKEN'  => (is => 'ro', isa => 'Str');
-has 'TARGET_URL' => (is => 'ro', isa => 'Str', required => 0);
+has 'API_TOKEN'  => (is => 'ro', isa => 'Str', required => 0);
+has 'TARGET_URL' => (is => 'ro', isa => 'Str', required => 1);
+
+use strict;
+use warnings;
+use TextWise::Logger;
 
 sub process {
 	# lazy package loading
@@ -28,6 +30,7 @@ sub process {
 
 	my $ret = { categories => $categories, concepts => $concepts };
 	# XXX insert into db
+	log_debug { "TODO: insert cats/concepts into db" };
 
 	return $ret;
 }
