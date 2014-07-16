@@ -8,25 +8,21 @@ use Mouse::Util::TypeConstraints;
 enum 'WorkerType' => qw(URL Query Both);
 
 #attributes
-has 'API_TOKEN'    => (is => 'ro', isa => 'Str');
-has 'MONGO_HOST'   => (is => 'ro', isa => 'Str');
+has 'API_TOKEN'    => (is => 'ro', isa => 'Str', required => 1);
+has 'MONGO_HOST'   => (is => 'ro', isa => 'Str', required => 1);
 has 'MONGO_USER'   => (is => 'ro', isa => 'Str', required => 0);
 has 'MONGO_PASS'   => (is => 'ro', isa => 'Str', required => 0);
-has 'ZMQ_ENDPOINT' => (is => 'ro', isa => 'Str');
-has 'WORKER_TYPE'  => (is => 'rw', isa => 'WorkerType');
+has 'ZMQ_ENDPOINT' => (is => 'ro', isa => 'Str', required => 1);
+has 'WORKER_TYPE'  => (is => 'rw', isa => 'WorkerType', required => 1);
 
 use strict;
 use warnings;
 use Carp;
 use Storable qw(thaw);
 use Log::Contextual::SimpleLogger;
-use Log::Contextual qw( :log ),
-	-logger => Log::Contextual::SimpleLogger->new({
-		levels_upto => 'debug',
-		coderef => sub { print @_ },
-	});
 use ZMQ::LibZMQ3;
 use ZMQ::Constants qw(ZMQ_SUB ZMQ_SUBSCRIBE);
+use TextWise::Logger;
 use TextWise::Data::URL;
 use TextWise::Data::Query;
 
@@ -60,7 +56,9 @@ sub loop {
 		}
 		my $obj_blob = s_recv($subscriber);
 		my $obj = thaw($obj_blob);
-		_process_msg($obj);
+		my $resp = _process_msg($obj);
+		my $resp_blob = freeze($resp);
+		zmq_send($subscriber,$resp_blob,0);
 	}
 
 	# interrupt caught
@@ -69,15 +67,16 @@ sub loop {
 
 sub _process_msg {
 	my $object = shift;
-	log_debug { Dumper($object->process) };
+	my $result = $object->process;
+	log_debug { Dumper($result) };
+	return $result;
 }
 
 sub s_recv {
-	# FIX THIS SECTION
 	my $sock = shift;
 	my $buf;
-	my $size = 5;# = zmq_recv($sock, $buf, MAX_MSGLEN);
-	return undef if ($size > 0);
+	my $size = zmq_recv($sock, $buf, MAX_MSGLEN);
+	return undef if ($size > 0 || !(defined($buf)));
 	return substr($buf, 0, $size);
 }
 
