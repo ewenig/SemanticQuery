@@ -18,13 +18,14 @@ has 'WORKER_TYPE'  => (is => 'rw', isa => 'WorkerType', required => 1);
 use strict;
 use warnings;
 use Carp;
-use Storable qw(thaw);
+use Storable qw(freeze thaw);
 use Log::Contextual::SimpleLogger;
 use ZMQ::LibZMQ3;
-use ZMQ::Constants qw(ZMQ_SUB ZMQ_SUBSCRIBE);
+use ZMQ::Constants qw(ZMQ_SUB ZMQ_SUBSCRIBE ZMQ_SNDMORE);
 use TextWise::Logger;
 use TextWise::Data::URL;
 use TextWise::Data::Query;
+use TextWise::Data::Error;
 
 use constant MAX_MSGLEN => 1024;
 
@@ -51,13 +52,23 @@ sub loop {
 
 	while (!$s_interrupted) {
 		my $envelope = s_recv($subscriber);
-		unless (defined($envelope)) {
-			next;
-		}
+		next unless (defined($envelope));
+		my $req_id = s_recv($subscriber);
+		next unless (defined($req_id));
 		my $obj_blob = s_recv($subscriber);
+
+		# error handling
+		local $SIG{__WARN__} = sub {
+			my $obj = new TextWise::Data::Error(ERR_MESSAGE => shift);
+			my $obj_blob = freeze($obj);
+			zmq_send($subscriber,$req_id,ZMQ_SNDMORE);
+			zmq_send($subscriber,$obj_blob,0);
+		};
+
 		my $obj = thaw($obj_blob);
 		my $resp = _process_msg($obj);
 		my $resp_blob = freeze($resp);
+		zmq_send($subscriber,$req_id,ZMQ_SNDMORE);
 		zmq_send($subscriber,$resp_blob,0);
 	}
 

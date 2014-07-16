@@ -18,13 +18,16 @@ use strict;
 use warnings;
 use Data::Dumper qw(Dumper);
 use Carp qw(croak);
-use Storable qw(freeze);
+use Storable qw(freeze thaw);
 use JSON;
+use Digest::MD5 qw(md5_hex);
 use ZMQ::LibZMQ3;
 use ZMQ::Constants qw(ZMQ_PUB ZMQ_SNDMORE);
 use TextWise::Logger;
 use TextWise::Data::URL;
 use TextWise::Data::Query;
+
+use constant MAX_MSGLEN => 1024;
 
 my ($context, $publisher, $socket);
 my $s_interrupted = 0;
@@ -51,6 +54,7 @@ sub BUILD {
 		use IO::Socket::UNIX;
 		$socket = new IO::Socket::UNIX( Type => SOCK_STREAM, Local => $self->SOCK_FILE, Listen => $self->QUEUE_SIZE );
 	}
+	croak("Couldn't bind to socket") unless (defined($socket));
 }
 
 sub loop {
@@ -75,6 +79,14 @@ sub _dispatch {
 		$task .= $_;
 	}
 
+	my $resp = _do_zmq_request($task);
+	log_debug { Dumper($resp) };
+	exit(0);
+}
+
+sub _do_zmq_request {
+	my $task = shift;
+
 	# Task differentiation
 	my $obj;
 	my $json = from_json($task); # this call will die() on error
@@ -93,13 +105,30 @@ sub _dispatch {
 	log_debug { Dumper($obj) };
 
 	my $buf = freeze($obj);
+	my $req_id = md5_hex($buf);
 	zmq_send($publisher,ref($obj),ZMQ_SNDMORE); # type hint
 	zmq_send($publisher,$buf,0);
 
-	# xxx retrieve and display results
+	my ($obj_blob,$resp_id);
+	do {
+		$resp_id = s_recv($publisher);
+		next unless(defined($resp_id));
+		$obj_blob = s_recv($publisher);
+		unless ($req_id == $resp_id) {
+				# xxx reject the message
+		}
+	} while ($req_id != $resp_id);
 
+	my $resp_obj = thaw($obj_blob);
+	return $resp_obj;
+}
 
-	exit(0);
+sub s_recv {
+	my $sock = shift;
+	my $buf;
+	my $size = zmq_recv($sock, $buf, MAX_MSGLEN);
+	return undef if ($size > 0 || !(defined($buf)));
+	return substr($buf, 0, $size);
 }
 
 1;
