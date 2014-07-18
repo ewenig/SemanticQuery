@@ -6,6 +6,7 @@ use Mouse;
 # attributes
 has 'TEXT'      => (is => 'ro', isa => 'Str', required => 1);
 has 'API_TOKEN' => (is => 'ro', isa => 'Str', required => 0);
+has 'DB_HOST'   => (is => 'ro', isa => 'Str', required => 0, default => 'localhost:27017');
 
 use strict;
 use warnings;
@@ -15,6 +16,7 @@ sub process {
 	# lazy package loading
 	require TextWise::API::Category;
 	require TextWise::API::Concept;
+	require MongoDB;
 
 	my $self = shift;
 	unless (defined($self->API_TOKEN)) {

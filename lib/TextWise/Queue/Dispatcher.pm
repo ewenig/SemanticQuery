@@ -115,7 +115,8 @@ sub _do_zmq_request {
 		next unless(defined($resp_id));
 		$obj_blob = s_recv($publisher);
 		unless ($req_id == $resp_id) {
-				# xxx reject the message
+			log_warn { "Dropped message with mismatched response ID $resp_id" };
+			# xxx reject the message
 		}
 	} while ($req_id != $resp_id);
 

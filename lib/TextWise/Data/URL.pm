@@ -6,6 +6,7 @@ use Mouse;
 # attributes
 has 'API_TOKEN'  => (is => 'ro', isa => 'Str', required => 0);
 has 'TARGET_URL' => (is => 'ro', isa => 'Str', required => 1);
+has 'DB_HOST'    => (is => 'ro', isa => 'Str', required => 0, default => 'localhost:27017');
 
 use strict;
 use warnings;
@@ -15,6 +16,7 @@ sub process {
 	# lazy package loading
 	require TextWise::API::Category;
 	require TextWise::API::Concept;
+	require MongoDB;
 
 	my $self = shift;
 	unless (defined($self->API_TOKEN)) {
@@ -28,10 +30,18 @@ sub process {
 	my $categories = $categorizer->process($self->TARGET_URL);
 	my $concepts = $conceiver->process($self->TARGET_URL);
 
-	my $ret = { categories => $categories, concepts => $concepts };
-	# XXX insert into db
-	log_debug { "TODO: insert cats/concepts into db" };
+	my $db_client = new MongoDB::MongoClient(host => $self->DB_HOST);
+	my $db = $db_client->get_database("SemanticQuery");
+	my $doc_id = $db->get_collection('entries')->insert({
+		url => $self->TARGET_URL,
+		categories => $categories,
+		concepts => $concepts
+	});
 
+	my $ret = {
+		status => "OK",
+		id => $doc_id->to_string
+	};
 	return $ret;
 }
 
