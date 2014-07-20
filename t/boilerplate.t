@@ -50,7 +50,7 @@ TODO: {
     "placeholder date/time"       => qr(Date/time)
   );
 
-  module_boilerplate_ok('lib/TextWise/Categorizer.pm');
+  module_boilerplate_ok('lib/SemanticQuery/Categorizer.pm');
 
 
 }

@@ -4,10 +4,10 @@ use warnings FATAL => 'all';
 use Module::Build;
 
 my $builder = Module::Build->new(
-    module_name         => 'TextWise::Categorizer',
+    module_name         => 'SemanticQuery::Categorizer',
     license             => 'Artistic_2_0',
     dist_author         => q{Eli Wenig <eli@csh.rit.edu>},
-    dist_version_from   => 'lib/TextWise/Categorizer.pm',
+    dist_version_from   => 'lib/SemanticQuery/Categorizer.pm',
     release_status      => 'stable',
     configure_requires => {
         'Module::Build' => 0,
@@ -19,7 +19,7 @@ my $builder = Module::Build->new(
         #'ABC'              => 1.6,
         #'Foo::Bar::Module' => 5.0401,
     },
-    add_to_cleanup     => [ 'TextWise-Categorizer-*' ],
+    add_to_cleanup     => [ 'SemanticQuery-Categorizer-*' ],
     create_makefile_pl => 'traditional',
 );
 

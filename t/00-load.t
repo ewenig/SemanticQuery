@@ -7,7 +7,7 @@ use Test::More;
 plan tests => 1;
 
 BEGIN {
-    use_ok( 'TextWise::Categorizer' ) || print "Bail out!\n";
+    use_ok( 'SemanticQuery::Categorizer' ) || print "Bail out!\n";
 }
 
-diag( "Testing TextWise::Categorizer $TextWise::Categorizer::VERSION, Perl $], $^X" );
+diag( "Testing SemanticQuery::Categorizer $SemanticQuery::Categorizer::VERSION, Perl $], $^X" );
