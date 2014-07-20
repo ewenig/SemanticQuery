@@ -15,7 +15,7 @@ use JSON;
 
 sub process {
 	my $self = shift;
-	my $TARGET_URL = shift or carp(__PACKAGE__ . " requires a URL argument");
+	my $TARGET_URL = shift or croak(__PACKAGE__ . " requires a URL argument");
 	my $TW_API_BASE = "http://api.semantichacker.com/" . $self->API_TOKEN . "/category?";
 	my $curl = WWW::Curl::Easy->new;
 
@@ -45,7 +45,7 @@ sub process {
 	# error checking
 	my $respobj = decode_json($resp);
 	if ($respobj->{'message'} && $respobj->{'message'}->{'messageCode'} == 102) {
-		carp("API call failed: " . $respobj->{'message'}->{'messageText'});
+		croak("API call failed: " . $respobj->{'message'}->{'messageText'});
 	}
 
 	my $categories = $respobj->{'categorizer'}->{'categorizerResponse'}->{'categories'};
@@ -74,7 +74,7 @@ sub _makeopts {
 
 =head1 NAME
 
-SemanticQuery::TextWise::API::Category - Perl interface for the TextWise (http://www.textwise.com/) Category API
+SemanticQuery::API::Category - Perl interface for the SemanticQuery (http://www.textwise.com/) Category API
 
 =head1 VERSION
 
@@ -87,13 +87,13 @@ our $VERSION = '0.01';
 
 =head1 SYNOPSIS
 
-SemanticQuery::TextWise::API::Category provides native access to the TextWise Category API.
+SemanticQuery::API::Category provides native access to the SemanticQuery Category API.
 
 It is invoked thusly:
 
-    use SemanticQuery::TextWise::API::Category;
+    use SemanticQuery::API::Category;
 
-    my $cat = SemanticQuery::TextWise::API::Category->new(
+    my $cat = SemanticQuery::API::Category->new(
         API_TOKEN = 'tokenstring',  # required
 	API_OPTS = { API options }, # not required (see http://www.textwise.com/api/documentation/api-services/category-service for parameters)
 	);
@@ -109,7 +109,34 @@ Eli Wenig, C<< <eli at csh.rit.edu> >>
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc SemanticQuery::TextWise::API::Category
+    perldoc SemanticQuery::API::Category
+
+
+You can also look for information at:
+
+=over 4
+
+=item * RT: CPAN's request tracker (report bugs here)
+
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=SemanticQuery-API-Category>
+
+=item * AnnoCPAN: Annotated CPAN documentation
+
+L<http://annocpan.org/dist/SemanticQuery-API-Category>
+
+=item * CPAN Ratings
+
+L<http://cpanratings.perl.org/d/SemanticQuery-API-Category>
+
+=item * Search CPAN
+
+L<http://search.cpan.org/dist/SemanticQuery-API-Category/>
+
+=back
+
+
+=head1 ACKNOWLEDGEMENTS
+
 
 =head1 LICENSE AND COPYRIGHT
 
@@ -154,4 +181,4 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 =cut
 
-1; # End of SemanticQuery::TextWise::API::Category
+1; # End of SemanticQuery::API::Category

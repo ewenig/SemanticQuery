@@ -4,11 +4,11 @@ use warnings FATAL => 'all';
 use Module::Build;
 
 my $builder = Module::Build->new(
-    module_name         => 'SemanticQuery::Categorizer',
+    module_name         => 'SemanticQuery',
     license             => 'Artistic_2_0',
     dist_author         => q{Eli Wenig <eli@csh.rit.edu>},
-    dist_version_from   => 'lib/SemanticQuery/Categorizer.pm',
-    release_status      => 'stable',
+    dist_version_from   => 'lib/SemanticQuery/TextWise.pm',
+    release_status      => 'development',
     configure_requires => {
         'Module::Build' => 0,
     },

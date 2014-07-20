@@ -1,4 +1,4 @@
-package SemanticQuery;
+package SemanticQuery::TextWise;
 
 our $Categories = {
 	2 => "Arts/Animation",

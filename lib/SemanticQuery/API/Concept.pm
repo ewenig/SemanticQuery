@@ -1,4 +1,4 @@
-package SemanticQuery::TextWise::API::Category;
+package SemanticQuery::TextWise::API::Concept;
 
 use 5.010;
 use Mouse;
@@ -12,20 +12,19 @@ use URL::Encode qw(url_encode);
 use WWW::Curl::Easy;
 use SemanticQuery::TextWise::API;
 use JSON;
+use Data::Dumper qw(Dumper);
 
 sub process {
 	my $self = shift;
-	my $TARGET_URL = shift or carp(__PACKAGE__ . " requires a URL argument");
-	my $TW_API_BASE = "http://api.semantichacker.com/" . $self->API_TOKEN . "/category?";
+	my $TARGET_URL = shift or croak(__PACKAGE__ . " requires a URL argument");
+	my $TW_API_BASE = "http://api.semantichacker.com/" . $self->API_TOKEN . "/concept?";
 	my $curl = WWW::Curl::Easy->new;
 
 	#options construction
 	my $opts;
 	if (defined($self->API_OPTS)) { $opts = $self->API_OPTS; }
 	else { # sane defaults
-		$opts = {
-			'nCategories' => 5,
-		};
+		$opts = {};
 	}
 	$opts->{'uri'} = $TARGET_URL;
 	$opts->{'format'} = 'json'; # non-negotiable
@@ -45,17 +44,11 @@ sub process {
 	# error checking
 	my $respobj = decode_json($resp);
 	if ($respobj->{'message'} && $respobj->{'message'}->{'messageCode'} == 102) {
-		carp("API call failed: " . $respobj->{'message'}->{'messageText'});
+		croak("API call failed: " . $respobj->{'message'}->{'messageText'});
 	}
 
-	my $categories = $respobj->{'categorizer'}->{'categorizerResponse'}->{'categories'};
-
-	for my $item (@$categories) {
-		my $long_name = $SemanticQuery::Categories->{$item->{'id'}};
-		$item->{'id'} = $long_name;
-	}
-
-	return $categories;
+	my $concepts = $respobj->{'conceptExtractor'}->{'conceptExtractorResponse'}->{'concepts'};
+	return $concepts;
 }
 
 ## helper functions ##
@@ -74,7 +67,7 @@ sub _makeopts {
 
 =head1 NAME
 
-SemanticQuery::TextWise::API::Category - Perl interface for the TextWise (http://www.textwise.com/) Category API
+SemanticQuery::API::Concept - Perl interface for the SemanticQuery (http://www.textwise.com/) Concept API
 
 =head1 VERSION
 
@@ -87,29 +80,56 @@ our $VERSION = '0.01';
 
 =head1 SYNOPSIS
 
-SemanticQuery::TextWise::API::Category provides native access to the TextWise Category API.
+SemanticQuery::API::Concept provides native access to the SemanticQuery Concept API.
 
 It is invoked thusly:
 
-    use SemanticQuery::TextWise::API::Category;
+    use SemanticQuery::API::Concept;;
 
-    my $cat = SemanticQuery::TextWise::API::Category->new(
+    my $con = SemanticQuery::API::Concept->new(
         API_TOKEN = 'tokenstring',  # required
-	API_OPTS = { API options }, # not required (see http://www.textwise.com/api/documentation/api-services/category-service for parameters)
 	);
 
-    $resp = $cat->process('http://www.example.com'); # response in Array[HashRef] format
-
+    $resp = $con->process('http://www.example.com'); # response in Array[HashRef] format
 
 =head1 AUTHOR
 
 Eli Wenig, C<< <eli at csh.rit.edu> >>
 
+
+
 =head1 SUPPORT
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc SemanticQuery::TextWise::API::Category
+    perldoc SemanticQuery::API::Concept
+
+
+You can also look for information at:
+
+=over 4
+
+=item * RT: CPAN's request tracker (report bugs here)
+
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=SemanticQuery-API-Concept>
+
+=item * AnnoCPAN: Annotated CPAN documentation
+
+L<http://annocpan.org/dist/SemanticQuery-API-Concept>
+
+=item * CPAN Ratings
+
+L<http://cpanratings.perl.org/d/SemanticQuery-API-Concept>
+
+=item * Search CPAN
+
+L<http://search.cpan.org/dist/SemanticQuery-API-Concept/>
+
+=back
+
+
+=head1 ACKNOWLEDGEMENTS
+
 
 =head1 LICENSE AND COPYRIGHT
 
@@ -154,4 +174,5 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 =cut
 
-1; # End of SemanticQuery::TextWise::API::Category
+1; # End of SemanticQuery::API::Concept
+
