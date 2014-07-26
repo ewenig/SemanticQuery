@@ -13,10 +13,11 @@ use Enbugger::OnError 'USR1';
 use lib 'lib';
 use SemanticQuery::Queue::Dispatcher;
 use SemanticQuery::Queue::Worker;
+use Data::Dumper qw(Dumper);
 
 # load num of workers to use
 my $workers;
-GetOptions('workers|w' => \$workers);
+GetOptions('workers|w=i' => \$workers);
 
 # sane defaults
 $ZMQ_ENDPOINT = 'tcp://localhost:7070' unless (defined($ZMQ_ENDPOINT));
@@ -56,22 +57,22 @@ __END__
 
 =head1 NAME
 
-harness.pl - Harness for spawning SemanticQuery Dispatcher and Worker processes
+sq-harness.pl - Harness for spawning SemanticQuery Dispatcher and Worker processes
 
 =head1 SYNOPSIS
 
-harness.pl [options]
+sq-harness.pl [options]
 
 	Options:
 		--workers|-w [n]		spawn [n] workers
 
-The following environmental variables should be set before invoking harness.pl.
+The following environmental variables should be set before invoking sq-harness.pl.
 
 	TW_API_TOKEN	The TextWise (http://www.textwise.com) API token to use.
 
 The following environmental variables may be set before invoking, but are not necessary.
 
-	ZMQ_ENDPOINT	The ZeroMQ endpoint to use (default: tcp://localhost:7070)
+	ZMQ_ENDPOINT	The ZeroMQ endpoint to use (default: tcp://localhost:6060)
 	DISP_SOCK_TYPE	The type of socket for Dispatcher to listen to requests on, TCP or UNIX (default: TCP)
 	DISP_SOCK_PORT	The port for Dispatcher to listen on using TCP (default: 5000)
 	DISP_SOCK_FILE	The named pipe for Dispatcher to listen on using UNIX sockets (default: unset)

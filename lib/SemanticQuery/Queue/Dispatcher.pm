@@ -43,7 +43,8 @@ sub BUILD {
 	# ZeroMQ initialization
 	$context = zmq_init();
 	$publisher = zmq_socket($context, ZMQ_PUSH);
-	zmq_connect($publisher,$self->ZMQ_ENDPOINT);
+	my $res = zmq_bind($publisher,$self->ZMQ_ENDPOINT);
+	croak("Couldn't bind to ZMQ endpoint " . $self->ZMQ_ENDPOINT . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
 
 	# Receiver socket initialization
 	if ($self->SOCK_TYPE eq 'TCP') {
@@ -80,8 +81,8 @@ sub _dispatch {
 		$task .= $_;
 	}
 
-	my $resp = _do_zmq_request($task);
-	log_debug { Dumper($resp) };
+	my $resp_obj = _do_zmq_request($task);
+	log_debug { Dumper($resp_obj) };
 	exit(0);
 }
 
@@ -110,8 +111,10 @@ sub _do_zmq_request {
 	do {
 		zmq_send($publisher,ref($obj),ZMQ_SNDMORE); # type hint
 		zmq_send($publisher,$buf,0);
-	}; # while (1);
+	} while (1);
 
+=begin comment
+	// pulling out while extra PULL socket on the dispatcher needs to be implemented
 	my $obj_blob = "0";
 	my $resp_id = "0";
 	while ($req_id ne $resp_id) {
@@ -125,6 +128,8 @@ sub _do_zmq_request {
 
 	my $resp_obj = thaw($obj_blob);
 	return $resp_obj;
+=cut
+	return;
 }
 
 sub s_recv {

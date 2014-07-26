@@ -7,6 +7,7 @@ use Mouse;
 has 'TEXT'      => (is => 'ro', isa => 'Str', required => 1);
 has 'API_TOKEN' => (is => 'ro', isa => 'Str', required => 0); # deferred attribute
 has 'MONGO_PTR' => (is => 'rw', isa => 'MongoDB::Database', required => 0); # deferred attribute
+has 'RESULTS'    => (is => 'rw', isa => 'HashRef', required => 0);
 
 use strict;
 use warnings;

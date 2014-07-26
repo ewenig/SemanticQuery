@@ -42,7 +42,9 @@ sub BUILD {
 	my $self = shift;
 	$context = zmq_init();
 	$subscriber = zmq_socket($context, ZMQ_PULL);
-	zmq_connect($subscriber,$self->ZMQ_ENDPOINT);
+	my $res = zmq_connect($subscriber,$self->ZMQ_ENDPOINT);
+	croak("Couldn't connect to ZMQ endpoint " . $self->ZMQ_ENDPOINT . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
+	
 	#filter out messages using type hints
 	#zmq_setsockopt($subscriber, ZMQ_SUBSCRIBE, 'SemanticQuery::Data::Query') if ($self->WORKER_TYPE eq 'Query' || $self->WORKER_TYPE eq 'Both');
 	#zmq_setsockopt($subscriber, ZMQ_SUBSCRIBE, 'SemanticQuery::Data::URL') if ($self->WORKER_TYPE eq 'URL' || $self->WORKER_TYPE eq 'Both');
@@ -58,7 +60,7 @@ sub loop {
 	my $self = shift;
 	log_info { 'Beginning main Worker loop' };
 
-	while (1) { #(!$s_interrupted) {
+	while (!$s_interrupted) {
 		my ($envelope,$req_id,$obj_blob,$obj);
 		log_debug { 'Receiving message envelope' };
 		$envelope = s_recv($subscriber) while (!defined($envelope));
