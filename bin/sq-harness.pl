@@ -9,6 +9,10 @@ use Env qw(TW_API_TOKEN ZMQ_ENDPOINT DISP_SOCK_TYPE DISP_SOCK_PORT DISP_SOCK_FIL
 
 use Enbugger::OnError 'USR1';
 
+$SIG{'INT'} = sub {
+	system('killall sq-harness.pl');
+};
+
 # load SemanticQuery modules
 use lib 'lib';
 use SemanticQuery::Queue::Dispatcher;
@@ -31,7 +35,7 @@ pod2usage("$0: DISP_SOCK_FILE must be set if socket type is UNIX") if ($DISP_SOC
 
 # options
 my $dispatcher_opts = {
-	ZMQ_ENDPOINT => $ZMQ_ENDPOINT,
+	ZMQ_PUSHPOINT => $ZMQ_ENDPOINT,
 	SOCK_TYPE => $DISP_SOCK_TYPE
 };
 $dispatcher_opts->{'LOCAL_PORT'} = $DISP_SOCK_PORT if ($DISP_SOCK_TYPE eq 'TCP');

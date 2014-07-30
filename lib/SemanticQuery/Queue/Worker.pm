@@ -13,7 +13,6 @@ has 'MONGO_HOST'   => (is => 'ro', isa => 'Str', required => 0, default => 'loca
 has 'MONGO_USER'   => (is => 'ro', isa => 'Str', required => 0);
 has 'MONGO_PASS'   => (is => 'ro', isa => 'Str', required => 0);
 has 'ZMQ_ENDPOINT' => (is => 'ro', isa => 'Str', required => 1);
-has 'WORKER_TYPE'  => (is => 'rw', isa => 'WorkerType', required => 0, default => 'Both');
 
 use strict;
 use warnings;
