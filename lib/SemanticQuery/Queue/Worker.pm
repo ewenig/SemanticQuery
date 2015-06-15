@@ -4,15 +4,13 @@ use 5.010;
 use Mouse;
 use Mouse::Util::TypeConstraints;
 
-#worker types
-enum 'WorkerType' => qw(URL Query Both);
-
 #attributes
 has 'API_TOKEN'    => (is => 'ro', isa => 'Str', required => 1);
 has 'MONGO_HOST'   => (is => 'ro', isa => 'Str', required => 0, default => 'localhost:27017');
 has 'MONGO_USER'   => (is => 'ro', isa => 'Str', required => 0);
 has 'MONGO_PASS'   => (is => 'ro', isa => 'Str', required => 0);
-has 'ZMQ_ENDPOINT' => (is => 'ro', isa => 'Str', required => 1);
+has 'ZMQ_PULLPOINT' => (is => 'ro', isa => 'Str', required => 1, default => 'tcp://localhost:6060');
+has 'ZMQ_PUSHPOINT' => (is => 'ro', isa => 'Str', required => 1, default => 'tcp://*:7071');
 
 use strict;
 use warnings;
@@ -20,16 +18,16 @@ use Carp;
 use Storable qw(freeze thaw);
 use Log::Contextual::SimpleLogger;
 use ZMQ::LibZMQ3;
-use ZMQ::Constants qw(ZMQ_PULL ZMQ_SUBSCRIBE ZMQ_SNDMORE);
+use ZMQ::Constants qw(ZMQ_PULL ZMQ_PUSH ZMQ_SNDMORE);
 use MongoDB;
 use SemanticQuery::Logger;
 use SemanticQuery::Data::URL;
 use SemanticQuery::Data::Query;
 use SemanticQuery::Data::Error;
-
+use Data::Dumper qw(Dumper);
 use constant MAX_MSGLEN => 1024;
 
-my ($context, $subscriber, $buf, $db);
+my ($context, $subscriber, $pusher, $buf, $db);
 my $s_interrupted = 0;
 $SIG{'INT'} = \&_handler;
 
@@ -41,9 +39,14 @@ sub BUILD {
 	my $self = shift;
 	$context = zmq_init();
 	$subscriber = zmq_socket($context, ZMQ_PULL);
-	my $res = zmq_connect($subscriber,$self->ZMQ_ENDPOINT);
-	croak("Couldn't connect to ZMQ endpoint " . $self->ZMQ_ENDPOINT . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
-	
+	$pusher = zmq_socket($context, ZMQ_PUSH);
+	log_debug { 'Connecting pull socket to endpoint at ' . $self->ZMQ_PULLPOINT };
+	my $res = zmq_connect($subscriber,$self->ZMQ_PULLPOINT);
+	die("Couldn't connect to ZMQ endpoint " . $self->ZMQ_PULLPOINT . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
+	log_debug { 'Binding push socket to endpoint at ' . $self->ZMQ_PUSHPOINT };
+	$res = zmq_bind($pusher,$self->ZMQ_PUSHPOINT);
+	die("Couldn't bind to ZMQ endpoint " . $self->ZMQ_PUSHPOINT . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
+
 	#filter out messages using type hints
 	#zmq_setsockopt($subscriber, ZMQ_SUBSCRIBE, 'SemanticQuery::Data::Query') if ($self->WORKER_TYPE eq 'Query' || $self->WORKER_TYPE eq 'Both');
 	#zmq_setsockopt($subscriber, ZMQ_SUBSCRIBE, 'SemanticQuery::Data::URL') if ($self->WORKER_TYPE eq 'URL' || $self->WORKER_TYPE eq 'Both');
@@ -60,20 +63,20 @@ sub loop {
 	log_info { 'Beginning main Worker loop' };
 
 	while (!$s_interrupted) {
-		my ($envelope,$req_id,$obj_blob,$obj);
+		my ($envelope,$req_id,$obj_blob,$obj) = ('','','');
 		log_debug { 'Receiving message envelope' };
-		$envelope = s_recv($subscriber) while (!defined($envelope));
-		log_debug { "Got envelope with type hint $envelope" };
-		$req_id = s_recv($subscriber) while (!defined($req_id));
+		$envelope = s_recv($subscriber) while ($envelope eq '');
+		log_debug { "Got envelope with type hint " . Dumper($envelope) };
+		$req_id = s_recv($subscriber) while ($req_id eq '');
 		log_debug { "Got request id $req_id" }
-		$obj_blob = s_recv($subscriber) while (!defined($obj_blob));
+		$obj_blob = s_recv($subscriber) while ($obj_blob eq '');
 
 		# error handling
 		local $SIG{__WARN__} = sub {
 			my $obj = new SemanticQuery::Data::Error(ERR_MESSAGE => shift);
 			my $obj_blob = freeze($obj);
-			zmq_send($subscriber,$req_id,ZMQ_SNDMORE);
-			zmq_send($subscriber,$obj_blob,0);
+			zmq_send($pusher,$req_id,ZMQ_SNDMORE);
+			zmq_send($pusher,$obj_blob,0);
 		};
 
 		$obj = thaw($obj_blob);
@@ -82,8 +85,8 @@ sub loop {
 		$obj->set_mongo_ptr($db);
 		my $resp = _process_msg($obj);
 		my $resp_blob = freeze($resp);
-		zmq_send($subscriber,$req_id,ZMQ_SNDMORE);
-		zmq_send($subscriber,$resp_blob,0);
+		zmq_send($pusher,$req_id,ZMQ_SNDMORE);
+		zmq_send($pusher,$resp_blob,0);
 	}
 
 	# interrupt caught
@@ -107,3 +110,24 @@ sub s_recv {
 }
 
 1;
+
+=pod
+
+=head1 SemanticQuery::Queue::Worker
+
+Worker listens on a ZeroMQ socket for requests over the wire or IPC socket.
+Requests come in as serialized Perl objects. The Worker object unserializes them
+and processes them (using the native processing functions included in the data
+object), returning the processed data to the Dispatcher function.
+
+Worker presently handles these types of requests:
+
+=over
+
+=item SemanticQuery::Data::URL - URL input requests
+=item SemanticQuery::Data::Query - Request to query the database
+=item SemanticQuery::Data::Error - Called in case of error
+
+=back
+
+=cut

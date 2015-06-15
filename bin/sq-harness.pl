@@ -43,7 +43,7 @@ $dispatcher_opts->{'SOCK_FILE'} = $DISP_SOCK_FILE if ($DISP_SOCK_TYPE eq 'UNIX')
 
 my $worker_opts = {
 	API_TOKEN => $TW_API_TOKEN,
-	ZMQ_ENDPOINT => $ZMQ_ENDPOINT
+	ZMQ_PULLPOINT => $ZMQ_ENDPOINT
 };
 
 my $dispatcher = SemanticQuery::Queue::Dispatcher->new($dispatcher_opts);
@@ -76,7 +76,7 @@ The following environmental variables should be set before invoking sq-harness.p
 
 The following environmental variables may be set before invoking, but are not necessary.
 
-	ZMQ_ENDPOINT	The ZeroMQ endpoint to use (default: tcp://localhost:6060)
+	ZMQ_ENDPOINT	The ZeroMQ endpoint to use (default: tcp://localhost:7070)
 	DISP_SOCK_TYPE	The type of socket for Dispatcher to listen to requests on, TCP or UNIX (default: TCP)
 	DISP_SOCK_PORT	The port for Dispatcher to listen on using TCP (default: 5000)
 	DISP_SOCK_FILE	The named pipe for Dispatcher to listen on using UNIX sockets (default: unset)

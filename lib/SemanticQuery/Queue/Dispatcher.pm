@@ -17,15 +17,18 @@ has 'QUEUE_SIZE'    => (is => 'ro', isa => 'Int', required => 0, default => 10);
 
 use strict;
 use warnings;
+use Errno qw(EAGAIN);
+use IO::Select;
 use Coro;
 use Coro::Socket;
+use Coro::Debug;
 use Data::Dumper qw(Dumper);
 use Carp qw(croak);
 use Storable qw(freeze thaw);
 use JSON;
 use Digest::MD5 qw(md5_hex);
 use ZMQ::LibZMQ3;
-use ZMQ::Constants qw(ZMQ_PUSH ZMQ_PULL ZMQ_SNDMORE);
+use ZMQ::Constants qw(ZMQ_PUSH ZMQ_PULL ZMQ_SNDMORE ZMQ_DONTWAIT);
 use SemanticQuery::Logger;
 use SemanticQuery::Data::URL;
 use SemanticQuery::Data::Query;
@@ -35,7 +38,8 @@ use constant CHANNEL_QUEUE => 512;
 
 my ($context, $publisher, $socket);
 my $s_interrupted = 0;
-my $SOCKETS = new Coro::Channel CHANNEL_QUEUE;
+my $SOCKETS = {};
+my $LOCK = new Coro::Semaphore;
 $SIG{'INT'} = \&_handler;
 
 sub _handler {
@@ -53,7 +57,7 @@ sub BUILD {
 		use IO::Socket::UNIX;
 		$socket = Coro::Socket->new_from_fh(new IO::Socket::UNIX( Type => SOCK_STREAM, Local => $self->SOCK_FILE, Listen => $self->QUEUE_SIZE ));
 	}
-	croak("Couldn't bind to socket") unless (defined($socket));
+	die("Couldn't bind to socket") unless (defined($socket));
 }
 
 sub loop {
@@ -61,14 +65,16 @@ sub loop {
 	my @threads;
 	log_info { 'Beginning main Dispatcher loop' };
 
-	push(@threads,new Coro \&_collector, $self->ZMQ_PULLPOINT);
+	push(@threads, new Coro \&_collector, $self->ZMQ_PULLPOINT);
 	$threads[-1]->ready;
 
 	while (!$s_interrupted) {
-		my $remote = $socket->accept;
+		$socket->accept;
 		log_debug { 'accepting socket' };
-		push(@threads,new Coro \&_dispatch, $remote, $self->ZMQ_PUSHPOINT);
+		push(@threads,new Coro \&_dispatch, $_->accept(), $self->ZMQ_PUSHPOINT);
 		$threads[-1]->ready;
+		#cede;
+		#$remote->close;
 	}
 
 	$_->join for (@threads);
@@ -78,7 +84,7 @@ sub loop {
 sub _dispatch {
 	my $remote = shift;
 	my $endpoint = shift;
-	croak('Undefined socket') unless (defined($remote));
+	die('Undefined socket') unless (defined($remote));
 	my $task = "";
 
 	while (<$remote>) {
@@ -86,25 +92,19 @@ sub _dispatch {
 	}
 
 	my $req_id = _do_zmq_request($task, $endpoint);
-	sleep 1;
-	cede;
 
 	while (1) {
-		my $buf = $SOCKETS->get();
-		log_debug { Dumper($buf) };
-		next unless defined($buf);
-		if (substr($buf,1,length($req_id)) eq $req_id) {
-			my $resp_obj = thaw(substr($buf,length($req_id)));
-			#XXX unwrap object
-			$remote->send(Dumper($resp_obj));
-			last;
-		} else {
-			# whoops
-			log_debug { "Placing mismatched request back into the queue" };
-			$SOCKETS->put($buf);	
-			sleep 1; #just to be safe
-		}
+		$LOCK->down;
+		last if (defined($SOCKETS->{$req_id}) && $SOCKETS->{$req_id} ne '');
+		$LOCK->up;
+		cede;
 	}
+	my $resp_obj = thaw($SOCKETS->{$req_id});
+	undef($SOCKETS->{$req_id});
+	$LOCK->up;
+	#XXX unwrap object
+	$remote->send(Dumper($resp_obj));
+	$remote->close;
 
 	return;
 }
@@ -114,8 +114,9 @@ sub _do_zmq_request {
 	my $endpoint = shift;
 	my $ctx = zmq_init();
 	my $pub = zmq_socket($ctx, ZMQ_PUSH);
+	log_debug { "Binding push socket to ZMQ endpoint $endpoint" };
 	my $res = zmq_bind($pub, $endpoint);
-	croak("Couldn't connect to ZMQ endpoint " . $endpoint . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
+	die("Couldn't bind to ZMQ endpoint " . $endpoint . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
 
 	# Task differentiation
 	my $obj;
@@ -142,42 +143,78 @@ sub _do_zmq_request {
 	};
 
 	# send request ID to sockets
-	$SOCKETS->put($req_id);
+	$LOCK->down;
+	$SOCKETS->{$req_id} = '';
+	$LOCK->up;
 
 	return $req_id;
 }
 
 sub _collector {
+	our $server = new_unix_server Coro::Debug "/tmp/socketpath";
+
 	my $endpoint = shift;
 	my $ctx = zmq_init();
 	my $sub = zmq_socket($ctx, ZMQ_PULL);
+	log_debug { "Connecting pull socket to ZMQ endpoint $endpoint" };
 	my $res = zmq_connect($sub, $endpoint);
+	die("Couldn't connect to ZMQ endpoint " . $endpoint . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
 	my $obj_blob = "0";
 	my $resp_id = "0";
-	my @ids;
 	while (1) {
-		push @ids,$_ while (defined($_ = $SOCKETS->get()));
-		log_debug { "ids contains: " . join(", ",@ids) };
 		$resp_id = s_recv($sub);
-		next if ($resp_id eq "0");
-		$obj_blob = s_recv($sub) while ($obj_blob eq "0");
-		unless ($resp_id ~~ @ids) {
+		if ($resp_id eq "0") {
+			cede;
+			next;
+		}
+		while ($obj_blob eq "0") {
+			cede;
+			$obj_blob = s_recv($sub);
+		}
+		$LOCK->down;
+		unless (defined($SOCKETS->{$resp_id})) {
 			# reject the message
 			log_warn { "Dropped message with mismatched response ID $resp_id" };
 			next;
 		}
-		# drop the id from the array XXX
-		$SOCKETS->put('_'.$resp_id.$obj_blob);
-		cede;
-	} 
+		$SOCKETS->{$resp_id} = $obj_blob;
+		$LOCK->up;
+	}
+
 }
 
 sub s_recv {
 	my $sock = shift;
 	my $buf;
-	my $size = zmq_recv($sock, $buf, MAX_MSGLEN);
-	return "0" if ($size > 0 || !(defined($buf)));
+	my $size = zmq_recv($sock, $buf, MAX_MSGLEN, ZMQ_DONTWAIT);
+	return "0" if (zmq_errno == EAGAIN); #$size > 0 || !(defined($buf)));
 	return substr($buf, 0, $size);
 }
 
 1;
+
+=pod
+
+=head1 SemanticQuery::Queue::Dispatcher
+
+Dispatcher takes requests in JSON format via a UNIX or TCP socket. It uses
+ZeroMQ to pass requests (in the form of messages) to the Workers (assuming one
+is available).
+
+Dispatcher takes JSON messages in this format:
+
+=begin text
+  {
+    "request": request-type,
+    "parameters":
+      {
+        params
+      }
+  }
+=end text
+
+where C<request-type> is one of C<URL> or C<Query> (corresponding to the two types
+of requests) and C<params> is a JSON object representing the input parameters for
+the given request.
+
+=cut
