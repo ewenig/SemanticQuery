@@ -1,5 +1,6 @@
 package SemanticQuery::Data::URL;
 
+use 5.010;
 use Carp;
 use Mouse;
 

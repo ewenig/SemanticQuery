@@ -1,6 +1,7 @@
 package SemanticQuery::Data::Query;
 
 use 5.010;
+use Carp;
 use Mouse;
 
 # attributes
