@@ -19,6 +19,7 @@ use Storable qw(freeze thaw);
 use Log::Contextual::SimpleLogger;
 use ZMQ::LibZMQ3;
 use ZMQ::Constants qw(ZMQ_PULL ZMQ_PUSH ZMQ_SNDMORE);
+use AnyEvent;
 use MongoDB;
 use SemanticQuery::Logger;
 use SemanticQuery::Data::URL;
@@ -51,7 +52,6 @@ sub BUILD {
 	#zmq_setsockopt($subscriber, ZMQ_SUBSCRIBE, 'SemanticQuery::Data::Query') if ($self->WORKER_TYPE eq 'Query' || $self->WORKER_TYPE eq 'Both');
 	#zmq_setsockopt($subscriber, ZMQ_SUBSCRIBE, 'SemanticQuery::Data::URL') if ($self->WORKER_TYPE eq 'URL' || $self->WORKER_TYPE eq 'Both');
 
-	log_debug { 'About to establish MongoDB connection' };
 	# MongoDB initialization
 	my $mongo = new MongoDB::MongoClient(host => $self->MONGO_HOST);
 	$db = $mongo->get_database('SemanticQuery');

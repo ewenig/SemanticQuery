@@ -19,94 +19,131 @@ use strict;
 use warnings;
 use Errno qw(EAGAIN);
 use IO::Select;
+
+# Events & threads
+use EV;
+use AnyEvent;
+use AnyEvent::Strict;
+use AnyEvent::Socket;
+use AnyEvent::Semaphore;
 use Coro;
-use Coro::Socket;
-use Coro::Debug;
+
+# Miscellaneous functions
 use Data::Dumper qw(Dumper);
 use Carp qw(croak);
 use Storable qw(freeze thaw);
 use JSON;
 use Digest::MD5 qw(md5_hex);
+
+# ZeroMQ libraries
 use ZMQ::LibZMQ3;
-use ZMQ::Constants qw(ZMQ_PUSH ZMQ_PULL ZMQ_SNDMORE ZMQ_DONTWAIT);
+use ZMQ::Constants qw(ZMQ_PUSH ZMQ_PULL ZMQ_SNDMORE ZMQ_DONTWAIT ZMQ_FD);
+
+# Logging facility
 use SemanticQuery::Logger;
+
+# Data structures
 use SemanticQuery::Data::URL;
 use SemanticQuery::Data::Query;
 
+# Constants
 use constant MAX_MSGLEN => 1024;
 use constant CHANNEL_QUEUE => 512;
 
 my ($context, $publisher, $socket);
-my $s_interrupted = 0;
 my $SOCKETS = {};
-my $LOCK = new Coro::Semaphore;
+my $LOCK = AnyEvent::Semaphore->new(1);
 $SIG{'INT'} = \&_handler;
 
 sub _handler {
-	$s_interrupted = 1;
-}
-
-sub BUILD {
-	my $self = shift;
-
-	# Receiver socket initialization
-	if ($self->SOCK_TYPE eq 'TCP') {
-		$socket = new Coro::Socket( LocalHost => '127.0.0.1', LocalPort => $self->LOCAL_PORT, Proto => 'tcp', Listen => $self->QUEUE_SIZE, ReuseAddr => 1)
-	}
-	if ($self->SOCK_TYPE eq 'UNIX') {
-		use IO::Socket::UNIX;
-		$socket = Coro::Socket->new_from_fh(new IO::Socket::UNIX( Type => SOCK_STREAM, Local => $self->SOCK_FILE, Listen => $self->QUEUE_SIZE ));
-	}
-	die("Couldn't bind to socket") unless (defined($socket));
+    EV::unloop;
 }
 
 sub loop {
 	my $self = shift;
-	my @threads;
 	log_info { 'Beginning main Dispatcher loop' };
 
-	push(@threads, new Coro \&_collector, $self->ZMQ_PULLPOINT);
-	$threads[-1]->ready;
-
-	while (!$s_interrupted) {
-		$socket->accept;
-		log_debug { 'accepting socket' };
-		push(@threads,new Coro \&_dispatch, $_->accept(), $self->ZMQ_PUSHPOINT);
-		$threads[-1]->ready;
-		#cede;
-		#$remote->close;
+	# Receiver socket config
+    my ($interface, $port);
+	if ($self->SOCK_TYPE eq 'TCP') {
+		$interface = '127.0.0.1';
+		$port = $self->LOCAL_PORT;
+	}
+	if ($self->SOCK_TYPE eq 'UNIX') {
+		$interface = 'unix/';
+		$port = $self->SOCK_FILE;
 	}
 
-	$_->join for (@threads);
+	# init dispatcher event
+    tcp_server($interface, $port, sub {
+		my $remote = shift;
+		die('Undefined socket') unless (defined($remote));
+		my $task = "";
+
+		while (<$remote>) {
+		    $task .= $_;
+		}
+
+		my $req_id = _do_zmq_request($task, $self->ZMQ_PUSHPOINT);
+
+		my $block = AnyEvent->condvar;
+		my ($w, $resp_obj);
+		while (1) {
+			$w = $LOCK->down(sub { $block->send; });
+			$block->recv; # block on the semaphore
+			if (defined($SOCKETS->{$req_id}) && $SOCKETS->{$req_id} ne '') {
+				$resp_obj = thaw($SOCKETS->{$req_id});
+				undef $SOCKETS->{$req_id};
+				last;
+			}
+			undef $w;
+		}
+
+		#XXX unwrap object
+		$remote->send(Dumper($resp_obj));
+		$remote->close;
+
+		return;
+    });
+
+	# init collector event
+	my $ctx = zmq_init();
+	my $sub = zmq_socket($ctx, ZMQ_PULL);
+	log_debug { "Connecting pull socket to ZMQ endpoint $self->ZMQ_PULLPOINT" };
+	my $res = zmq_connect($sub, $self->ZMQ_PULLPOINT);
+	die("Couldn't connect to ZMQ endpoint " . $self->ZMQ_PULLPOINT . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
+	my $zmq_fh = zmq_getsockopt($sub, ZMQ_FD);
+    my $zmq_loop = AnyEvent->io(
+		fh   => $zmq_fh,
+		poll => "r",
+		cb   => sub {
+		    my $obj_blob = "0";
+		    my $resp_id = "0";
+		    my $block = AnyEvent->condvar;
+			$resp_id = s_recv($sub);
+			if ($resp_id eq "0") {
+				return;
+			}
+			while ($obj_blob eq "0") {
+				$obj_blob = s_recv($sub);
+			}
+			my $w = $LOCK->down(sub {
+			    if (defined($SOCKETS->{$resp_id})) {
+			        $SOCKETS->{$resp_id} = $obj_blob;
+			    } else {
+   		 			# reject the message
+		    		log_warn { "Dropped message with mismatched response ID $resp_id" };
+		    	}
+			    $block->send;
+			});
+			$block->recv;
+			undef $w;
+		}
+    );
+
+	# start main loop
+	EV::loop;
 	croak("Caught interrupt");
-}
-
-sub _dispatch {
-	my $remote = shift;
-	my $endpoint = shift;
-	die('Undefined socket') unless (defined($remote));
-	my $task = "";
-
-	while (<$remote>) {
-		$task .= $_;
-	}
-
-	my $req_id = _do_zmq_request($task, $endpoint);
-
-	while (1) {
-		$LOCK->down;
-		last if (defined($SOCKETS->{$req_id}) && $SOCKETS->{$req_id} ne '');
-		$LOCK->up;
-		cede;
-	}
-	my $resp_obj = thaw($SOCKETS->{$req_id});
-	undef($SOCKETS->{$req_id});
-	$LOCK->up;
-	#XXX unwrap object
-	$remote->send(Dumper($resp_obj));
-	$remote->close;
-
-	return;
 }
 
 sub _do_zmq_request {
@@ -143,45 +180,17 @@ sub _do_zmq_request {
 	};
 
 	# send request ID to sockets
-	$LOCK->down;
-	$SOCKETS->{$req_id} = '';
-	$LOCK->up;
+	my $block = AnyEvent->condvar;
+	my $w = $LOCK->down(sub {
+		$SOCKETS->{$req_id} = '';
+		$block->send;
+    });
+	$block->recv;
+	undef $w;
 
 	return $req_id;
 }
 
-sub _collector {
-	our $server = new_unix_server Coro::Debug "/tmp/socketpath";
-
-	my $endpoint = shift;
-	my $ctx = zmq_init();
-	my $sub = zmq_socket($ctx, ZMQ_PULL);
-	log_debug { "Connecting pull socket to ZMQ endpoint $endpoint" };
-	my $res = zmq_connect($sub, $endpoint);
-	die("Couldn't connect to ZMQ endpoint " . $endpoint . ", got error " . zmq_strerror(zmq_errno)) unless ($res == 0);
-	my $obj_blob = "0";
-	my $resp_id = "0";
-	while (1) {
-		$resp_id = s_recv($sub);
-		if ($resp_id eq "0") {
-			cede;
-			next;
-		}
-		while ($obj_blob eq "0") {
-			cede;
-			$obj_blob = s_recv($sub);
-		}
-		$LOCK->down;
-		unless (defined($SOCKETS->{$resp_id})) {
-			# reject the message
-			log_warn { "Dropped message with mismatched response ID $resp_id" };
-			next;
-		}
-		$SOCKETS->{$resp_id} = $obj_blob;
-		$LOCK->up;
-	}
-
-}
 
 sub s_recv {
 	my $sock = shift;
