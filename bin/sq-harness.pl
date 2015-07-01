@@ -6,9 +6,14 @@ use Env qw();
 use Getopt::Long qw(GetOptions);
 use Pod::Usage qw(pod2usage);
 use Env qw(TW_API_TOKEN ZMQ_ENDPOINT DISP_SOCK_TYPE DISP_SOCK_PORT DISP_SOCK_FILE);
+use EV;
 
+my @cpids; # child process IDs
 $SIG{'INT'} = sub {
-	system('killall sq-harness.pl');
+    # signal handler
+    EV::unloop;
+    kill 'INT', @cpids;
+    die;
 };
 
 # load SemanticQuery modules
@@ -45,13 +50,26 @@ my $worker_opts = {
 };
 
 my $dispatcher = SemanticQuery::Queue::Dispatcher->new($dispatcher_opts);
-fork and $dispatcher->loop;
+my $pid = fork;
+if ($pid == 0) {
+    $dispatcher->loop;
+    return 0;
+} else {
+    push @cpids, $pid;
+}
 
 for (my $ctr = 0; $ctr < $workers; $ctr++) {
-	fork and next;
-	my $worker = SemanticQuery::Queue::Worker->new($worker_opts);
-	$worker->loop;
+	$pid = fork;
+	if ($pid == 0) {
+        my $worker = SemanticQuery::Queue::Worker->new($worker_opts);
+	    $worker->loop;
+        return 0;
+    } else {
+        push @cpids, $pid;
+    }
 }
+
+EV::loop;
 
 1;
 
