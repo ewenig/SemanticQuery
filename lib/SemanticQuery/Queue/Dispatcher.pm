@@ -26,6 +26,7 @@ use AnyEvent;
 use AnyEvent::Strict;
 use AnyEvent::Socket;
 use AnyEvent::Semaphore;
+use AnyEvent::JSONRPC::TCP::Server;
 use Coro;
 
 # Miscellaneous functions
@@ -34,10 +35,11 @@ use Carp qw(croak);
 use Storable qw(freeze thaw);
 use JSON;
 use Digest::MD5 qw(md5_hex);
+use SemanticQuery;
 
 # ZeroMQ libraries
 use ZMQ::LibZMQ3;
-use ZMQ::Constants qw(ZMQ_PUSH ZMQ_PULL ZMQ_SNDMORE ZMQ_DONTWAIT ZMQ_FD);
+use ZMQ::Constants qw(ZMQ_PUSH ZMQ_PULL ZMQ_SNDMORE ZMQ_DONTWAIT ZMQ_FD ZMQ_RCVMORE);
 
 # Logging facility
 use SemanticQuery::Logger;
@@ -74,37 +76,37 @@ sub loop {
 		$port = $self->SOCK_FILE;
 	}
 
-	# init dispatcher event
-    tcp_server($interface, $port, sub {
-		my $remote = shift;
-		die('Undefined socket') unless (defined($remote));
-		my $task = "";
+	# init dispatcher service
+	my $dispatcher_svc = AnyEvent::JSONRPC::TCP::Server->new(
+			address => '127.0.0.1',
+			port    => $self->LOCAL_PORT
+	);
+    $dispatcher_svc->reg_cb(
+		version  => sub {
+			my $remote = shift;
+			$remote->result($SemanticQuery::VERSION);
+		},
+		dispatch => sub {
+			my ($remote, $task, $params) = @_;
+			my $block = AnyEvent->condvar;
+			my $req_id = _do_zmq_request($task, $params, $self->ZMQ_PUSHPOINT);
 
-		while (<$remote>) {
-		    $task .= $_;
-		}
-
-		my $req_id = _do_zmq_request($task, $self->ZMQ_PUSHPOINT);
-
-		my $block = AnyEvent->condvar;
-		my ($w, $resp_obj);
-		while (1) {
-			$w = $LOCK->down(sub { $block->send; });
-			$block->recv; # block on the semaphore
-			if (defined($SOCKETS->{$req_id}) && $SOCKETS->{$req_id} ne '') {
-				$resp_obj = thaw($SOCKETS->{$req_id});
-				undef $SOCKETS->{$req_id};
-				last;
+			my ($w, $resp_obj);
+			while (1) {
+				$w = $LOCK->down(sub { $block->send; });
+				$block->recv; # block on the semaphore
+				if (defined($SOCKETS->{$req_id}) && $SOCKETS->{$req_id} ne '') {
+					$resp_obj = thaw($SOCKETS->{$req_id});
+					undef $SOCKETS->{$req_id};
+					last;
+				}
+				undef $w;
 			}
-			undef $w;
+
+			#XXX unwrap object
+			$remote->result([Dumper($resp_obj)]);
 		}
-
-		#XXX unwrap object
-		$remote->send(Dumper($resp_obj));
-		$remote->close;
-
-		return;
-    });
+	);
 
 	# init collector event
 	my $ctx = zmq_init();
@@ -119,13 +121,16 @@ sub loop {
 		cb   => sub {
 		    my $obj_blob = "0";
 		    my $resp_id = "0";
+			my $msg;
 		    my $block = AnyEvent->condvar;
-			$resp_id = s_recv($sub);
+			$msg = zmq_recvmsg($sub, ZMQ_RCVMORE);
+			$resp_id = zmq_msg_data($msg);
 			if ($resp_id eq "0") {
 				return;
 			}
 			while ($obj_blob eq "0") {
-				$obj_blob = s_recv($sub);
+				$msg = zmq_recvmsg($sub, ZMQ_RCVMORE);
+				$obj_blob = zmq_msg_data($msg);
 			}
 			my $w = $LOCK->down(sub {
 			    if (defined($SOCKETS->{$resp_id})) {
@@ -147,8 +152,7 @@ sub loop {
 }
 
 sub _do_zmq_request {
-	my $task = shift;
-	my $endpoint = shift;
+	my ($type, $params, $endpoint) = @_;
 	my $ctx = zmq_init();
 	my $pub = zmq_socket($ctx, ZMQ_PUSH);
 	log_debug { "Binding push socket to ZMQ endpoint $endpoint" };
@@ -157,10 +161,6 @@ sub _do_zmq_request {
 
 	# Task differentiation
 	my $obj;
-	my $json = from_json($task); # this call will die() on error
-
-	my $type = $json->{'request'} or die();
-	my $params = $json->{'parameters'} or die();
 
 	if ($type eq 'Query') {
 		$obj = SemanticQuery::Data::Query->new($params) or die(); # XXX
@@ -175,17 +175,22 @@ sub _do_zmq_request {
 	my $buf = freeze($obj);
 	my $req_id = md5_hex($buf);
 	do {
-		zmq_send($pub,ref($obj),ZMQ_SNDMORE); # type hint
-		zmq_send($pub,$buf,0);
+		log_debug { "Sending string " . ref($obj) }
+		zmq_send($pub, ref($obj), -1, ZMQ_SNDMORE); # type hint
+		log_debug { "Sending string " . $buf }
+		zmq_send($pub, $buf, -1);
 	};
 
 	# send request ID to sockets
 	my $block = AnyEvent->condvar;
+	log_debug { "About to send the request ID to sockets" }
 	my $w = $LOCK->down(sub {
+		log_debug { "Got the mutex lock" }
 		$SOCKETS->{$req_id} = '';
 		$block->send;
     });
 	$block->recv;
+	log_debug { "Out of mutex lock routine" }
 	undef $w;
 
 	return $req_id;
@@ -209,6 +214,8 @@ sub s_recv {
 Dispatcher takes requests in JSON format via a UNIX or TCP socket. It uses
 ZeroMQ to pass requests (in the form of messages) to the Workers (assuming one
 is available).
+
+XXX describe JSONRPC format & functions
 
 Dispatcher takes JSON messages in this format:
 

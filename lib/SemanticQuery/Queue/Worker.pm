@@ -9,8 +9,8 @@ has 'API_TOKEN'    => (is => 'ro', isa => 'Str', required => 1);
 has 'MONGO_HOST'   => (is => 'ro', isa => 'Str', required => 0, default => 'localhost:27017');
 has 'MONGO_USER'   => (is => 'ro', isa => 'Str', required => 0);
 has 'MONGO_PASS'   => (is => 'ro', isa => 'Str', required => 0);
-has 'ZMQ_PULLPOINT' => (is => 'ro', isa => 'Str', required => 1, default => 'tcp://localhost:6060');
-has 'ZMQ_PUSHPOINT' => (is => 'ro', isa => 'Str', required => 1, default => 'tcp://*:7071');
+has 'ZMQ_PULLPOINT' => (is => 'ro', isa => 'Str', required => 1, default => 'tcp://127.0.0.1:6060');
+has 'ZMQ_PUSHPOINT' => (is => 'ro', isa => 'Str', required => 1, default => 'tcp://127.0.0.1:7071');
 
 use strict;
 use warnings;
@@ -18,8 +18,9 @@ use Carp;
 use Storable qw(freeze thaw);
 use Log::Contextual::SimpleLogger;
 use ZMQ::LibZMQ3;
-use ZMQ::Constants qw(ZMQ_PULL ZMQ_PUSH ZMQ_SNDMORE);
+use ZMQ::Constants qw(ZMQ_PULL ZMQ_PUSH ZMQ_SNDMORE ZMQ_FD ZMQ_RCVMORE);
 use AnyEvent;
+use EV;
 use MongoDB;
 use SemanticQuery::Logger;
 use SemanticQuery::Data::URL;
@@ -33,7 +34,7 @@ my $s_interrupted = 0;
 $SIG{'INT'} = \&_handler;
 
 sub _handler {
-	$s_interrupted = 1;
+    EV::unloop;
 }
 
 sub BUILD {
@@ -62,33 +63,50 @@ sub loop {
 	my $self = shift;
 	log_info { 'Beginning main Worker loop' };
 
-	while (!$s_interrupted) {
-		my ($envelope,$req_id,$obj_blob,$obj) = ('','','');
-		log_debug { 'Receiving message envelope' };
-		$envelope = s_recv($subscriber) while ($envelope eq '');
-		log_debug { "Got envelope with type hint " . Dumper($envelope) };
-		$req_id = s_recv($subscriber) while ($req_id eq '');
-		log_debug { "Got request id $req_id" }
-		$obj_blob = s_recv($subscriber) while ($obj_blob eq '');
+    my $zmq_fh = zmq_getsockopt($subscriber, ZMQ_FD);
+	my $zmq_loop = AnyEvent->io(
+		fh   => $zmq_fh,
+		poll => "r",
+		cb   => sub {
+			my ($envelope,$req_id,$obj_blob,$obj,$msg) = ('','','');
+			log_debug { 'Receiving message envelope' };
+			do {
+				$msg = zmq_recvmsg($subscriber);
+				$envelope = zmq_msg_data($msg) if defined($msg);
+			} while ($envelope eq '');
+			log_debug { "Got envelope with type hint " . $envelope };
 
-		# error handling
-		local $SIG{__WARN__} = sub {
-			my $obj = new SemanticQuery::Data::Error(ERR_MESSAGE => shift);
-			my $obj_blob = freeze($obj);
+			do {
+				$msg = zmq_recvmsg($subscriber);
+				$req_id = zmq_msg_data($msg) if defined($msg);
+			} while ($req_id eq '');
+			log_debug { "Got request id $req_id" }
+
+			do {
+				$msg = zmq_recvmsg($subscriber);
+				$obj_blob = zmq_msg_data($msg) if defined($msg);
+			} while ($obj_blob eq '');
+
+			# error handling
+			local $SIG{__WARN__} = sub {
+				my $obj = new SemanticQuery::Data::Error(ERR_MESSAGE => shift);
+				my $obj_blob = freeze($obj);
+				zmq_send($pusher,$req_id,ZMQ_SNDMORE);
+				zmq_send($pusher,$obj_blob,0);
+			};
+
+			$obj = thaw($obj_blob);
+			log_debug { 'Got Data object with type ' . ref($obj) }
+			$obj->set_api_token($self->API_TOKEN);
+			$obj->set_mongo_ptr($db);
+			my $resp = _process_msg($obj);
+			my $resp_blob = freeze($resp);
 			zmq_send($pusher,$req_id,ZMQ_SNDMORE);
-			zmq_send($pusher,$obj_blob,0);
-		};
+			zmq_send($pusher,$resp_blob,0);
+		}
+    );
 
-		$obj = thaw($obj_blob);
-		log_debug { 'Got Data object with type ' . ref($obj) }
-		$obj->set_api_token($self->API_TOKEN);
-		$obj->set_mongo_ptr($db);
-		my $resp = _process_msg($obj);
-		my $resp_blob = freeze($resp);
-		zmq_send($pusher,$req_id,ZMQ_SNDMORE);
-		zmq_send($pusher,$resp_blob,0);
-	}
-
+	EV::loop;
 	# interrupt caught
 	log_warn { 'Caught interrupt' };
 	croak("Caught interrupt");

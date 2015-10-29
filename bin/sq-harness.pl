@@ -27,7 +27,7 @@ my $workers;
 GetOptions('workers|w=i' => \$workers);
 
 # sane defaults
-$ZMQ_ENDPOINT = 'tcp://localhost:7070' unless (defined($ZMQ_ENDPOINT));
+$ZMQ_ENDPOINT = 'tcp://127.0.0.1:7070' unless (defined($ZMQ_ENDPOINT));
 $DISP_SOCK_TYPE = 'TCP' unless (defined($DISP_SOCK_TYPE));
 $DISP_SOCK_PORT = 6000 unless (defined($DISP_SOCK_PORT) || $DISP_SOCK_TYPE ne 'TCP');
 
